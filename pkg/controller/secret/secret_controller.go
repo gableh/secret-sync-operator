@@ -92,56 +92,58 @@ func (r *ReconcileSecret) Reconcile(request reconcile.Request) (reconcile.Result
 		return reconcile.Result{}, err
 	}
 
-	// Check annotation of secret
-	if rep, ok := instance.Annotations["sso.gable.dev/secret"]; ok {
-		reqLogger.Info(fmt.Sprintf("Found secret with annotation [%s][%s]...[%s]", instance.Name, instance.Namespace, rep))
+	// Check labels of secret
+	if rep, ok := instance.Labels["sso.gable.dev/secret"]; ok {
+		reqLogger.Info(fmt.Sprintf("Found secret with label [%s][%s]...[%s]", instance.Name, instance.Namespace, rep))
 		result, err := json.Marshal(instance.Data)
 		if err != nil {
 			reqLogger.Error(err, "Failed to hash secret data")
 		}
 
 		hashedData := hash(string(result))
-		if hashedData != instance.Annotations["hash"] {
-			_, createErr := controllerutil.CreateOrUpdate(context.TODO(), r.client, instance, func() error {
-				instance.Annotations["hash"] = hashedData
-				return nil
-			})
+		if currentHash, ok := instance.Annotations["hash"]; ok {
+			if hashedData != currentHash {
+				_, createErr := controllerutil.CreateOrUpdate(context.TODO(), r.client, instance, func() error {
+					instance.Annotations["hash"] = hashedData
+					return nil
+				})
 
-			if createErr != nil {
-				reqLogger.Error(err, "Failed to update secret")
-			}
+				if createErr != nil {
+					reqLogger.Error(err, "Failed to update secret")
+				}
 
-			deploymentList := &appsv1.DeploymentList{}
-			listOpts := []client.ListOption{
-				client.InNamespace(instance.Namespace),
-				client.MatchingLabels{
-					"sso.gable.dev": instance.Name,
-				},
-			}
-			if err = r.client.List(context.TODO(), deploymentList, listOpts...); err != nil {
-				reqLogger.Error(err, "Failed to list deployments")
-				return reconcile.Result{}, err
-			}
-			deploymentNames := getDeploymentNames(deploymentList.Items)
-			log.Info("Printing Found", "Deployments", deploymentNames)
-			log.Info("Redeploying")
+				deploymentList := &appsv1.DeploymentList{}
+				listOpts := []client.ListOption{
+					client.InNamespace(instance.Namespace),
+					client.MatchingLabels{
+						"sso.gable.dev/secret": instance.Name,
+					},
+				}
+				if err = r.client.List(context.TODO(), deploymentList, listOpts...); err != nil {
+					reqLogger.Error(err, "Failed to list deployments")
+					return reconcile.Result{}, err
+				}
+				deploymentNames := getDeploymentNames(deploymentList.Items)
+				log.Info("Printing Found", "Deployments", deploymentNames)
+				log.Info("Redeploying")
 
-			for _, deploymentName := range deploymentNames {
-				deployment := &appsv1.Deployment{}
-				err := r.client.Get(context.TODO(), client.ObjectKey{Namespace: request.Namespace, Name: deploymentName}, deployment)
-				if err != nil {
-					log.Error(err, "Failed to redeploy")
-				} else {
-					op, err := controllerutil.CreateOrUpdate(context.TODO(), r.client, deployment, func() error {
-						// update the Secret
-						deployment.Spec.Template.Labels["updatedSecretAt"] = strconv.FormatInt((time.Now().UnixNano()), 10)
-						deployment.Labels["updatedSecretAt"] = strconv.FormatInt((time.Now().UnixNano()), 10)
-						return nil
-					})
+				for _, deploymentName := range deploymentNames {
+					deployment := &appsv1.Deployment{}
+					err := r.client.Get(context.TODO(), client.ObjectKey{Namespace: request.Namespace, Name: deploymentName}, deployment)
 					if err != nil {
-						log.Error(err, "Deployment reconcile failed")
+						log.Error(err, "Failed to redeploy")
 					} else {
-						log.Info("Deployment successfully reconciled", "operation", op)
+						op, err := controllerutil.CreateOrUpdate(context.TODO(), r.client, deployment, func() error {
+							// update the Secret
+							deployment.Spec.Template.Labels["updatedSecretAt"] = strconv.FormatInt((time.Now().UnixNano()), 10)
+							deployment.Labels["updatedSecretAt"] = strconv.FormatInt((time.Now().UnixNano()), 10)
+							return nil
+						})
+						if err != nil {
+							log.Error(err, "Deployment reconcile failed")
+						} else {
+							log.Info("Deployment successfully reconciled", "operation", op)
+						}
 					}
 				}
 			}
