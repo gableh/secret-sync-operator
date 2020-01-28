@@ -1,4 +1,4 @@
-package secret
+package secretsync
 
 import (
 	"context"
@@ -23,7 +23,6 @@ import (
 
 var log = logf.Log.WithName("controller_secret")
 
-
 // Add creates a new Secret Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
 func Add(mgr manager.Manager) error {
@@ -38,7 +37,7 @@ func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
 func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	// Create a new controller
-	c, err := controller.New("secret-controller", mgr, controller.Options{Reconciler: r})
+	c, err := controller.New("secret-sync-controller", mgr, controller.Options{Reconciler: r})
 	if err != nil {
 		return err
 	}
