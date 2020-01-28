@@ -2,9 +2,6 @@ package secret
 
 import (
 	"context"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	"testing"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -13,7 +10,10 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"testing"
 )
 
 var secret = &corev1.Secret{
@@ -21,7 +21,7 @@ var secret = &corev1.Secret{
 		Name:      "test-secret",
 		Namespace: "default",
 		Annotations: map[string]string{
-			"hash": "",
+			"hashedData": "1107822918",
 		},
 		Labels: map[string]string{
 			"sso.gable.dev/secret": "true",
@@ -91,8 +91,9 @@ var deployment = &appsv1.Deployment{
 		},
 	},
 }
+
 // @TODO annotations hash, updatedSecretAt will currently fail if not set before hand, is there a way around this?
-func TestSecretControllerShouldUpdateSecrets(t *testing.T) {
+func TestSecretSyncControllerShouldUpdateHashedDataIfHashedDataIsDifferent(t *testing.T) {
 	logf.SetLogger(zap.Logger(true))
 
 	objs := []runtime.Object{secret, deployment}
@@ -142,6 +143,52 @@ func TestSecretControllerShouldUpdateSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to update secret: (%v)", err)
 	}
+
+	updatedSecret := &corev1.Secret{}
+	err = r.client.Get(context.TODO(), req.NamespacedName, updatedSecret)
+	if err != nil {
+		t.Fatal("Failed to find updated secret")
+	}
+	if updatedSecret.Annotations["hashedData"] == testSecret.Annotations["hashedData"] {
+		t.Fatal("hashedData annotation not updated")
+	}
+}
+
+func TestSecretSyncControllerShouldUpdateDeploymentLabelIfHashedDataIsDifferent(t *testing.T) {
+	logf.SetLogger(zap.Logger(true))
+
+	objs := []runtime.Object{secret, deployment}
+
+	s := scheme.Scheme
+	s.AddKnownTypes(appsv1.SchemeGroupVersion, deployment)
+	s.AddKnownTypes(corev1.SchemeGroupVersion, secret)
+	cl := fake.NewFakeClientWithScheme(s, objs...)
+
+	opt := client.MatchingLabels(map[string]string{"sso.gable.dev/secret": "test-secret"})
+	secretList := &corev1.SecretList{}
+	err := cl.List(context.TODO(), secretList, opt)
+	if err != nil {
+		t.Fatalf("list secrets: (%v)", err)
+	}
+
+	r := &ReconcileSecret{client: cl, scheme: s}
+
+	req := reconcile.Request{
+		NamespacedName: types.NamespacedName{
+			Name:      "test-secret",
+			Namespace: "default",
+		},
+	}
+
+	r.Reconcile(req)
+
+	testSecret := &corev1.Secret{}
+	r.client.Get(context.TODO(), req.NamespacedName, testSecret)
+
+	testSecret.Data["test"] = []byte("c3VjY2Vzcw==")
+	r.client.Update(context.TODO(), testSecret)
+	r.Reconcile(req)
+
 	deploymentReq := reconcile.Request{
 		NamespacedName: types.NamespacedName{
 			Name:      "test-deployment",
@@ -164,5 +211,65 @@ func TestSecretControllerShouldUpdateSecrets(t *testing.T) {
 	}
 	if testDeployment.Labels["updatedSecretAt"] == "0" {
 		t.Error("Deployment was not updated by controller")
+	}
+}
+
+func TestSecretSyncControllerShouldNotUpdateDeploymentTimestampIfHashedDataIsTheSame(t *testing.T) {
+	logf.SetLogger(zap.Logger(true))
+
+	objs := []runtime.Object{secret, deployment}
+
+	s := scheme.Scheme
+	s.AddKnownTypes(appsv1.SchemeGroupVersion, deployment)
+	s.AddKnownTypes(corev1.SchemeGroupVersion, secret)
+	cl := fake.NewFakeClientWithScheme(s, objs...)
+
+	opt := client.MatchingLabels(map[string]string{"sso.gable.dev/secret": "test-secret"})
+	secretList := &corev1.SecretList{}
+	err := cl.List(context.TODO(), secretList, opt)
+	if err != nil {
+		t.Fatalf("list secrets: (%v)", err)
+	}
+
+	r := &ReconcileSecret{client: cl, scheme: s}
+
+	req := reconcile.Request{
+		NamespacedName: types.NamespacedName{
+			Name:      "test-secret",
+			Namespace: "default",
+		},
+	}
+
+	r.Reconcile(req)
+
+	testSecret := &corev1.Secret{}
+	r.client.Get(context.TODO(), req.NamespacedName, testSecret)
+
+	testSecret.Data["test"] = []byte("aW5pdGlhbA==")
+	r.client.Update(context.TODO(), testSecret)
+	r.Reconcile(req)
+
+	deploymentReq := reconcile.Request{
+		NamespacedName: types.NamespacedName{
+			Name:      "test-deployment",
+			Namespace: "default",
+		},
+	}
+
+	deployRes, err := r.Reconcile(deploymentReq)
+	if err != nil {
+		t.Fatalf("reconcile: (%v)", err)
+	}
+
+	testDeployment := &appsv1.Deployment{}
+	err = r.client.Get(context.TODO(), deploymentReq.NamespacedName, testDeployment)
+	if err != nil {
+		t.Fatalf("Failed to get deployment: (%v)", err)
+	}
+	if !deployRes.Requeue {
+		t.Log("reconcile did not requeue request as expected")
+	}
+	if testDeployment.Labels["updatedSecretAt"] != "0" {
+		t.Error("Deployment was updated by controller")
 	}
 }

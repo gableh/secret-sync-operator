@@ -23,10 +23,6 @@ import (
 
 var log = logf.Log.WithName("controller_secret")
 
-/**
-* USER ACTION REQUIRED: This is a scaffold file intended for the user to modify with their own Controller
-* business logic.  Delete these comments after modifying this file.*
- */
 
 // Add creates a new Secret Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
@@ -101,10 +97,10 @@ func (r *ReconcileSecret) Reconcile(request reconcile.Request) (reconcile.Result
 		}
 
 		hashedData := hash(string(result))
-		if currentHash, ok := instance.Annotations["hash"]; ok {
+		if currentHash, ok := instance.Annotations["hashedData"]; ok {
 			if hashedData != currentHash {
 				_, createErr := controllerutil.CreateOrUpdate(context.TODO(), r.client, instance, func() error {
-					instance.Annotations["hash"] = hashedData
+					instance.Annotations["hashedData"] = hashedData
 					return nil
 				})
 
@@ -128,23 +124,7 @@ func (r *ReconcileSecret) Reconcile(request reconcile.Request) (reconcile.Result
 				log.Info("Redeploying")
 
 				for _, deploymentName := range deploymentNames {
-					deployment := &appsv1.Deployment{}
-					err := r.client.Get(context.TODO(), client.ObjectKey{Namespace: request.Namespace, Name: deploymentName}, deployment)
-					if err != nil {
-						log.Error(err, "Failed to redeploy")
-					} else {
-						op, err := controllerutil.CreateOrUpdate(context.TODO(), r.client, deployment, func() error {
-							// update the Secret
-							deployment.Spec.Template.Labels["updatedSecretAt"] = strconv.FormatInt((time.Now().UnixNano()), 10)
-							deployment.Labels["updatedSecretAt"] = strconv.FormatInt((time.Now().UnixNano()), 10)
-							return nil
-						})
-						if err != nil {
-							log.Error(err, "Deployment reconcile failed")
-						} else {
-							log.Info("Deployment successfully reconciled", "operation", op)
-						}
-					}
+					updateDeployments(r, request, deploymentName)
 				}
 			}
 		}
@@ -153,8 +133,24 @@ func (r *ReconcileSecret) Reconcile(request reconcile.Request) (reconcile.Result
 	return reconcile.Result{}, nil
 }
 
-func updateDeployments() {
-
+func updateDeployments(r *ReconcileSecret, request reconcile.Request, deploymentName string) {
+	deployment := &appsv1.Deployment{}
+	err := r.client.Get(context.TODO(), client.ObjectKey{Namespace: request.Namespace, Name: deploymentName}, deployment)
+	if err != nil {
+		log.Error(err, "Failed to redeploy")
+	} else {
+		op, err := controllerutil.CreateOrUpdate(context.TODO(), r.client, deployment, func() error {
+			// update the Secret
+			deployment.Spec.Template.Labels["updatedSecretAt"] = strconv.FormatInt((time.Now().UnixNano()), 10)
+			deployment.Labels["updatedSecretAt"] = strconv.FormatInt((time.Now().UnixNano()), 10)
+			return nil
+		})
+		if err != nil {
+			log.Error(err, "Deployment reconcile failed")
+		} else {
+			log.Info("Deployment successfully reconciled", "operation", op)
+		}
+	}
 }
 
 func hash(s string) string {
