@@ -6,17 +6,16 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - pods
-  - services
-  - services/finalizers
-  - endpoints
-  - persistentvolumeclaims
-  - events
   - configmaps
-  - secrets
   verbs:
   - create
-  - delete
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  - secrets
+  - configmaps
+  verbs:
   - get
   - list
   - patch
@@ -26,12 +25,7 @@ rules:
   - apps
   resources:
   - deployments
-  - daemonsets
-  - replicasets
-  - statefulsets
   verbs:
-  - create
-  - delete
   - get
   - list
   - patch
@@ -53,15 +47,8 @@ rules:
   verbs:
   - "update"
 - apiGroups:
-  - ""
-  resources:
-  - pods
-  verbs:
-  - get
-- apiGroups:
   - apps
   resources:
   - replicasets
-  - deployments
   verbs:
-  - get
+  - "get"

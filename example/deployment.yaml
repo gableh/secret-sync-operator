@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-deployment
+  labels:
+    sso.gable.dev/secret: my-secret
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      name: my-deployment
+  template:
+    metadata:
+      labels:
+        name: my-deployment
+    spec:
+      containers:
+        - name: my-deployment
+          image: busybox
+          command:
+          - "busybox"
+          - "sleep"
+          - "10000"
+          imagePullPolicy: Always
+          env:
+            - name: "testEnvVariable"
+              valueFrom:
+                secretKeyRef:
+                  name: "my-secret"
+                  key: test
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "250m"
+            limits:
+              memory: "128Mi"
+              cpu: "500m"
