@@ -126,6 +126,18 @@ func (r *ReconcileSecret) Reconcile(request reconcile.Request) (reconcile.Result
 					updateDeployments(r, request, deploymentName)
 				}
 			}
+		} else {
+			log.Info("hashedData not found, adding it in")
+			op, err := controllerutil.CreateOrUpdate(context.TODO(), r.client, instance, func() error {
+				// update the Secret
+				instance.Annotations["hashedData"] = hashedData
+				return nil
+			})
+			if err != nil {
+				log.Error(err, "failed to add hashedData annotation")
+			} else {
+				log.Info("Added hashedData", "operation", op)
+			}
 		}
 
 	}

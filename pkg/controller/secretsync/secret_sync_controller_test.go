@@ -69,7 +69,6 @@ var deployment = &appsv1.Deployment{
 		Namespace: "default",
 		Labels: map[string]string{
 			"sso.gable.dev/secret": "test-secret",
-			"updatedSecretAt":      "0",
 		},
 	},
 	Spec: appsv1.DeploymentSpec{
@@ -83,8 +82,7 @@ var deployment = &appsv1.Deployment{
 				Name:      "test-pod",
 				Namespace: "default",
 				Labels: map[string]string{
-					"app":             "my-app",
-					"updatedSecretAt": "0",
+					"app": "my-app",
 				},
 			},
 			Spec: testPodSpec,
@@ -181,6 +179,7 @@ func TestSecretSyncControllerShouldUpdateDeploymentLabelIfHashedDataIsDifferent(
 	}
 
 	r.Reconcile(req)
+	r.Reconcile(req)
 
 	testSecret := &corev1.Secret{}
 	r.client.Get(context.TODO(), req.NamespacedName, testSecret)
@@ -269,7 +268,9 @@ func TestSecretSyncControllerShouldNotUpdateDeploymentTimestampIfHashedDataIsThe
 	if !deployRes.Requeue {
 		t.Log("reconcile did not requeue request as expected")
 	}
-	if testDeployment.Labels["updatedSecretAt"] != "0" {
-		t.Error("Deployment was updated by controller")
+	if timestamp, ok := testDeployment.Labels["updatedSecretAt"]; ok {
+		if timestamp != "0" {
+			t.Error("Deployment was updated by controller", "time", timestamp)
+		}
 	}
 }
