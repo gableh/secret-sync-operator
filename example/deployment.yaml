@@ -3,7 +3,8 @@ kind: Deployment
 metadata:
   name: my-deployment
   labels:
-    sso.gable.dev/secret: my-secret
+    sso.gable.dev/my-secret: "true"
+    sso.gable.dev/my-other-secret: "true"
 spec:
   replicas: 3
   selector:

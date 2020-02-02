@@ -111,7 +111,7 @@ func (r *ReconcileSecret) Reconcile(request reconcile.Request) (reconcile.Result
 				listOpts := []client.ListOption{
 					client.InNamespace(instance.Namespace),
 					client.MatchingLabels{
-						"sso.gable.dev/secret": instance.Name,
+						fmt.Sprintf("sso.gable.dev/%s", instance.Name): "true",
 					},
 				}
 				if err = r.client.List(context.TODO(), deploymentList, listOpts...); err != nil {

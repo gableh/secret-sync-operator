@@ -32,6 +32,22 @@ var secret = &corev1.Secret{
 	},
 }
 
+var secret2 = &corev1.Secret{
+	ObjectMeta: metav1.ObjectMeta{
+		Name:      "test-multiple-secret",
+		Namespace: "default",
+		Annotations: map[string]string{
+			"hashedData": "1107822918",
+		},
+		Labels: map[string]string{
+			"sso.gable.dev/secret": "true",
+		},
+	},
+	Data: map[string][]byte{
+		"test": []byte("aW5pdGlhbA=="),
+	},
+}
+
 var testPodSpec = corev1.PodSpec{
 	Containers: []corev1.Container{
 		corev1.Container{
@@ -68,7 +84,7 @@ var deployment = &appsv1.Deployment{
 		Name:      "test-deployment",
 		Namespace: "default",
 		Labels: map[string]string{
-			"sso.gable.dev/secret": "test-secret",
+			"sso.gable.dev/test-secret": "true",
 		},
 	},
 	Spec: appsv1.DeploymentSpec{
@@ -171,22 +187,7 @@ func TestSecretSyncControllerShouldUpdateDeploymentLabelIfHashedDataIsDifferent(
 
 	r := &ReconcileSecret{client: cl, scheme: s}
 
-	req := reconcile.Request{
-		NamespacedName: types.NamespacedName{
-			Name:      "test-secret",
-			Namespace: "default",
-		},
-	}
-
-	r.Reconcile(req)
-	r.Reconcile(req)
-
-	testSecret := &corev1.Secret{}
-	r.client.Get(context.TODO(), req.NamespacedName, testSecret)
-
-	testSecret.Data["test"] = []byte("c3VjY2Vzcw==")
-	r.client.Update(context.TODO(), testSecret)
-	r.Reconcile(req)
+	UpdateSecret(r, "test-secret", "c3VjY2Vzcw==")
 
 	deploymentReq := reconcile.Request{
 		NamespacedName: types.NamespacedName{
@@ -232,21 +233,7 @@ func TestSecretSyncControllerShouldNotUpdateDeploymentTimestampIfHashedDataIsThe
 
 	r := &ReconcileSecret{client: cl, scheme: s}
 
-	req := reconcile.Request{
-		NamespacedName: types.NamespacedName{
-			Name:      "test-secret",
-			Namespace: "default",
-		},
-	}
-
-	r.Reconcile(req)
-
-	testSecret := &corev1.Secret{}
-	r.client.Get(context.TODO(), req.NamespacedName, testSecret)
-
-	testSecret.Data["test"] = []byte("aW5pdGlhbA==")
-	r.client.Update(context.TODO(), testSecret)
-	r.Reconcile(req)
+	UpdateSecret(r, "test-secret", "aW5pdGlhbA==")
 
 	deploymentReq := reconcile.Request{
 		NamespacedName: types.NamespacedName{
@@ -273,4 +260,73 @@ func TestSecretSyncControllerShouldNotUpdateDeploymentTimestampIfHashedDataIsThe
 			t.Error("Deployment was updated by controller", "time", timestamp)
 		}
 	}
+}
+
+func TestSecretSyncControllerShouldBeAbleToHandleMultipleSecrets(t *testing.T) {
+	logf.SetLogger(zap.Logger(true))
+
+	multiSecretDeployment := deployment.DeepCopy()
+	multiSecretDeployment.Labels["sso.gable.dev/test-multiple-secret"] = "true"
+
+	objs := []runtime.Object{secret, secret2, multiSecretDeployment}
+
+	s := scheme.Scheme
+	s.AddKnownTypes(appsv1.SchemeGroupVersion, multiSecretDeployment)
+	s.AddKnownTypes(corev1.SchemeGroupVersion, secret)
+	s.AddKnownTypes(corev1.SchemeGroupVersion, secret2)
+	cl := fake.NewFakeClientWithScheme(s, objs...)
+
+	opt := client.MatchingLabels(map[string]string{"sso.gable.dev/secret": "test-secret"})
+	secretList := &corev1.SecretList{}
+	err := cl.List(context.TODO(), secretList, opt)
+	if err != nil {
+		t.Fatalf("list secrets: (%v)", err)
+	}
+
+	r := &ReconcileSecret{client: cl, scheme: s}
+
+	UpdateSecret(r, "test-secret", "c3VjY2Vzcw==")
+
+	deploymentReq := reconcile.Request{
+		NamespacedName: types.NamespacedName{
+			Name:      "test-deployment",
+			Namespace: "default",
+		},
+	}
+
+	r.Reconcile(deploymentReq)
+
+	testDeployment := &appsv1.Deployment{}
+	r.client.Get(context.TODO(), deploymentReq.NamespacedName, testDeployment)
+
+	firstSecretUpdatedAt := testDeployment.Labels["updatedSecretAt"]
+
+	UpdateSecret(r, "test-multiple-secret", "c3VjY2Vzcw==")
+
+	r.Reconcile(deploymentReq)
+
+	testDeployment = &appsv1.Deployment{}
+	r.client.Get(context.TODO(), deploymentReq.NamespacedName, testDeployment)
+
+	if firstSecretUpdatedAt == testDeployment.Labels["updatedSecretAt"] {
+		t.Errorf("Second secret did not update deployment")
+	}
+}
+
+func UpdateSecret(r *ReconcileSecret, secretName string, updatedValue string) {
+	req := reconcile.Request{
+		NamespacedName: types.NamespacedName{
+			Name:      secretName,
+			Namespace: "default",
+		},
+	}
+	r.Reconcile(req)
+
+	testSecret := &corev1.Secret{}
+	r.client.Get(context.TODO(), req.NamespacedName, testSecret)
+	r.Reconcile(req)
+
+	testSecret.Data["test"] = []byte(updatedValue)
+	r.client.Update(context.TODO(), testSecret)
+	r.Reconcile(req)
 }

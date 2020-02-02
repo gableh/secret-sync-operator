@@ -10,7 +10,9 @@ Install the operator with
 Pull the repo and run it with `operator-sdk up local` while connected to your kubernetes cluster.
 
 ## Usage
-Secrets and Deployments that subscribe to those secrets should be labelled with "sso.gable.dev/secret:${NAME_OF_SECRET}"
+Secrets to be watched should be labelled with `sso.gable.dev/secret: ${SECRET_NAME}`
+
+Deployments subscribing to these secrets under watch should have the label `sso.gable.dev/${SECRET_NAME}: true` for each secret being subscribed to.
 
 A demonstration is located in the examples folder
 
